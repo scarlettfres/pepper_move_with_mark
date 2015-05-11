@@ -13,10 +13,16 @@ from geometry_msgs.msg import Twist # for sending commands to the drone
 from naoqi import ALProxy
 from tf.transformations import quaternion_from_euler, euler_from_quaternion
 
-FINESSE=0.05
+# -- variables magiques 
+FINESSE=0.01	# a 1 cm pres 
+DURATION_LOST=0.3
+TIMER_ALMOTION=0.5
 #IP="127.0.0.1"
 IP="10.0.206.111"
 PORT=9559
+
+# -- variables magiques 
+
 class move_pepper:
 	def __init__(self,coord,ID):
 		
@@ -32,38 +38,39 @@ class move_pepper:
 
 		self.id_markeur_tete=ID
 		rospy.Subscriber("/result_position", Marker,self.position_callback)
-		rospy.Timer(rospy.Duration(0.5), self.timer_callback)
+		rospy.Timer(rospy.Duration(TIMER_ALMOTION), self.timer_callback)
 
 
 		
 	def position_callback(self,data):
 		print "coucou"
-		self.clock= rospy.Time.now()
 		self.tosend = [self.coord[0]-data.pose.position.x,self.coord[1]-data.pose.position.y]	# repere rviz
-		if abs(self.tosend[0])>FINESSE or abs(self.tosend[1])>FINESSE:
-			self.move=True
-			print "True"
+		if data.text == "detected" :
+			if abs(self.tosend[0])>FINESSE or abs(self.tosend[1])>FINESSE:
+				self.move=True
+				print "True"
+			else:
+				self.move=False
+				print "false"
+				rospy.signal_shutdown(' goal reached ')
 		else:
 			self.move=False
 			print "false"
-			#rospy.signal_shutdown(' goal reached ')
+			rospy.signal_shutdown(' pepper out of range ')
+
 
 
 	def timer_callback(self,data):
 		print "timer"
-		if self.move==True and rospy.Time.now()-self.clock<0.3:
-			print "mooove"
-			self.motionProxy.post.moveTo(self.tosend[0], self.tosend[1], 0)	# sens axes repere pepper = sens axes repere rviz 
-			# wait is useful because with porospy.Time.now()st moveTo is not blocking function
-			print "pre wait"
-			print "aaaaaaaaaaaaaaaaaaaaaaaaa"
-			self.motionProxy.waitUntilMoveIsFinished()
-			print "post wait"
+		if self.move==True : 
+				print "mooove"
+				self.motionProxy.post.moveTo(self.tosend[0], self.tosend[1], 0)	# sens axes repere pepper = sens axes repere rviz 
+				# wait is useful because with porospy.Time.now()st moveTo is not blocking function
+				print "pre wait"
+				self.motionProxy.waitUntilMoveIsFinished()
+				print "post wait"
 
-		else:
-			print " pepper out of range "
-
-
+		
 
 	"""
     def angle_callback(self,data):
