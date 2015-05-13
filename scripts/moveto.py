@@ -4,6 +4,7 @@ import rospy
 import naoqi
 import time
 import sys
+from math import pi
 import numpy as np
 from visualization_msgs.msg import Marker
 from std_msgs.msg import Empty
@@ -14,14 +15,24 @@ from naoqi import ALProxy
 from tf.transformations import quaternion_from_euler, euler_from_quaternion
 
 # -- variables magiques 
-FINESSE=0.01	# a 1 cm pres 
+FINESSE=0.01	# a 1 cm pres
+FINESSE_ANGLE=0.01 
 DURATION_LOST=0.3
 TIMER_ALMOTION=0.5
+HAUTEUR_ERREUR=0.5
 #IP="127.0.0.1"
 IP="10.0.206.111"
 PORT=9559
 
 # -- variables magiques 
+
+
+def sign(x):
+    if x > 0:
+        return 1
+    if x == 0:
+        return 0
+    return -1
 
 class move_pepper:
 	def __init__(self,coord,ID):
@@ -32,39 +43,58 @@ class move_pepper:
 		tab_coord=str(coord).split()
 		self.coord=[float(tab_coord[0]), float(tab_coord[1]), float(tab_coord[2])]
 		print self.coord
+		self.tosend = [0,0,0]
 		self.clock=rospy.Time.now()
-
-
-
 		self.id_markeur_tete=ID
 		rospy.Subscriber("/result_position", Marker,self.position_callback)
 		rospy.Timer(rospy.Duration(TIMER_ALMOTION), self.timer_callback)
 
 
+	def angle_to_turn(self,quaternion):
+		euler=euler_from_quaternion(quaternion)	
+		to_turn = self.coord[2] - euler[2]	# ce quon veut moins ce quon a 
+		if abs(to_turn)<pi:	 # !!changement de signe a PI dans le repere rviz
+			print "iiiiif"
+			print "to turn",to_turn
+			return to_turn
+		else:
+			print "else"
+			to_turn = pi - abs(self.coord[2]) + pi - abs(euler[2])
+			print "to turn",to_turn
+			return to_turn*(-sign(self.coord[2]))
+
+			
+
+
+
 		
 	def position_callback(self,data):
 		print "coucou"
-		self.tosend = [self.coord[0]-data.pose.position.x,self.coord[1]-data.pose.position.y]	# repere rviz
-		if data.text == "detected" :
-			if abs(self.tosend[0])>FINESSE or abs(self.tosend[1])>FINESSE:
+		self.tosend = [self.coord[0]-data.pose.position.x,self.coord[1]-data.pose.position.y,0]	# repere rviz
+		quaternion=[data.pose.orientation.x,data.pose.orientation.y,data.pose.orientation.z,data.pose.orientation.w]
+		self.tosend[2] = self.angle_to_turn(quaternion)
+		
+		if data.pose.position.z>HAUTEUR_ERREUR and data.text == "detected":	# to avoid the bug of bad calibration that makes the robot fly 
+			print "bug calib or not detected "
+			self.move=False
+		else:
+			if (abs(self.tosend[0])>FINESSE or abs(self.tosend[1])>FINESSE or abs(self.tosend[2])>FINESSE ):
 				self.move=True
 				print "True"
+			
 			else:
 				self.move=False
-				print "false"
+				print "goal reached"
 				rospy.signal_shutdown(' goal reached ')
-		else:
-			self.move=False
-			print "false"
-			rospy.signal_shutdown(' pepper out of range ')
-
 
 
 	def timer_callback(self,data):
 		print "timer"
 		if self.move==True : 
+				print self.tosend
 				print "mooove"
-				self.motionProxy.post.moveTo(self.tosend[0], self.tosend[1], 0)	# sens axes repere pepper = sens axes repere rviz 
+				a=self.motionProxy.post.moveTo(self.tosend[0], self.tosend[1], self.tosend[2])	# sens axes repere pepper = sens axes repere rviz ICIIIIIIIIIIIIIIIIIIIIIIII
+				
 				# wait is useful because with porospy.Time.now()st moveTo is not blocking function
 				print "pre wait"
 				self.motionProxy.waitUntilMoveIsFinished()
@@ -72,96 +102,6 @@ class move_pepper:
 
 		
 
-	"""
-    def angle_callback(self,data):
-		if data.id==self.id_markeur_tete:
-            self.clock_verif_erreur = rospy.Time.now() + rospy.Duration(temps_erreur)
-            self.detection=1
-        elif rospy.Time.now()> self.clock_verif_erreur:
-            self.detection=0
-            print "non detection de la marque ", self.id_markeur_tete
-
-    """
-"""
-		
-	def move(self,x,y,z,xr,yr,zr):
-	
-		topic = 'visualizationnaoleft'
-		
-		publisher = rospy.Publisher(topic, Marker)
-
-		markerl = Marker()
-		markerl.header.frame_id = "/hydra_base"
-		markerl.type = markerl.SPHERE
-		markerl.action = markerl.ADD
-		markerl.scale.x = 0.2
-		markerl.scale.y = 0.2
-		markerl.scale.z = 0.2
-		markerl.color.a = 1.0
-		markerl.pose.orientation.w = 1.0
-		markerl.pose.position.x = vectl[0]
-		markerl.pose.position.y = vectl[1]
-		markerl.pose.position.z = vectl[2]
-		markerl.color.r = 0.0
-		markerl.color.g = 1.0
-		markerl.color.b = 0.0
-		markerl.color.a = 1.0
-		
-		
-		
-		topic = 'visualizationnaoright'
-		publisher2 = rospy.Publisher(topic, Marker)
-
-		markerr = Marker()
-		markerr.header.frame_id = "/hydra_base"
-		markerr.type = markerr.SPHERE
-		markerr.action = markerr.ADD
-		markerr.scale.x = 0.2
-		markerr.scale.y = 0.2
-		markerr.scale.z = 0.2
-		markerr.color.a = 1.0
-		markerr.pose.orientation.w = 1.0
-		markerr.pose.position.x = vectr[0]
-		markerr.pose.position.y = vectr[1]
-		markerr.pose.position.z = vectr[2]
-		markerr.color.r = 0.0
-		markerr.color.g = 0.0
-		markerr.color.b = 0.1
-		markerr.color.a = 1.0
-		
-		
-		self.compteur= self.compteur+1 
-		#self.compteur=50
-		if self.compteur == 200:
-		
-			PositionLeft = self.motionProxy.getPosition('LArm',0, True)
-			PositionRight = self.motionProxy.getPosition('RArm',0, True)
-		
-			vectl= [x/RATIO+self.XleftNao,y/RATIO+self.YleftNao,z/RATIO+self.ZleftNao,self.r1leftNao,self.r2leftNao,self.r3leftNao]
-			vectr= [xr/RATIO+self.XrightNao,yr/RATIO+self.YrightNao,zr/RATIO+self.ZrightNao,self.r1rightNao,self.r2rightNao,self.r3rightNao]
-		
-		
-			ecartx = abs(PositionLeft[0]-(x/RATIO+self.XleftNao))
-			ecarty = abs(PositionLeft[1]-(y/RATIO+self.YleftNao))
-			ecartz = abs(PositionLeft[2]-(z/RATIO+self.ZleftNao))
-			ecartrx = abs(PositionRight[0]-(xr/RATIO+self.XrightNao))
-			ecartry = abs(PositionLeft[1]+(yr/RATIO+self.YrightNao))
-			ecartrz = abs(PositionLeft[2]-(zr/RATIO+self.ZrightNao))
-		
-		
-			if (ecartx>FINESSE or ecarty>FINESSE or ecartz>FINESSE):	# on lui envoie une commande que SI mvmt consequent
-				
-				self.motionProxy.setPosition ("LArm", 0, vectl, VITESSE, 7)
-				
-			if ecartrx>FINESSE or ecartry>FINESSE or ecartrz>FINESSE:	
-				
-				self.motionProxy.setPosition ("RArm", 0,vectr, VITESSE, 7)
-			self.compteur=0
-			time.sleep(0.5)
-			publisher.publish(markerl)
-			publisher2.publish(markerr)		
-
-	"""
 		
 def updateArgs(arg_defaults):
     '''Look up parameters starting in the driver's private parameter space, but
